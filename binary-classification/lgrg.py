@@ -18,7 +18,9 @@ train, val, test = torchtext.datasets.SST.splits(
     TEXT, LABEL,
     filter_pred=lambda ex: ex.label != 'neutral')
 
-TEXT.build_vocab(train, val, test)
+TEXT.build_vocab(train)
+# does not work without test and val (19423 vs 16282) 
+#print(len(vars(TEXT.vocab)['freqs']))
 LABEL.build_vocab(train)
 
 train_iter, val_iter, test_iter = torchtext.data.BucketIterator.splits(
@@ -48,32 +50,30 @@ class BoWClassifier(nn.Module):
         #print(probs)
         return probs
 
-def make_bow_vector(batch_text, word_to_ix):
+def make_bow_vector(batch_text):
     blen = batch_text.shape[1]
     seqlen = batch_text.shape[0]
 
-    vec = torch.zeros(len(word_to_ix), blen)
+    vec = torch.zeros(VOCAB_SIZE, blen)
     
     for b in range(blen):
         for s in range(seqlen):
-            w = batch_text[s, b]
+            w = batch_text[s, b]           
             vec[w.item(), b] += 1
 
     #print(vec.shape)
     return vec
-
-word_to_ix = vars(TEXT.vocab)['stoi']
 
 model = BoWClassifier(CLASSES, VOCAB_SIZE)
 
 loss_function = nn.NLLLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.1)
 
-for epoch in range(50):
+for epoch in range(1):
 
     for batch in train_iter:
         model.zero_grad()
-        bow_vector = make_bow_vector(batch.text, word_to_ix)
+        bow_vector = make_bow_vector(batch.text)
         target = batch.label
         #print(target.shape)
 
@@ -94,10 +94,7 @@ for epoch in range(50):
 
 total_error = []
 for batch in test_iter:
-    #if batch.label.shape[0] != 1:
-        #print(batch.text.shape)
-
-        bow_vector = make_bow_vector(batch.text, word_to_ix)
+        bow_vector = make_bow_vector(batch.text)
         target = torch.LongTensor(batch.label)
         #print(bow_vector.shape)
 
