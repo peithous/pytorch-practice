@@ -11,6 +11,19 @@ TEXT_neg = data.Field()
 TEXT = data.Field()
 LABEL = data.Field(sequential=False, unk_token=None)
 
+# input data
+train, val, test = torchtext.datasets.SST.splits(
+    TEXT, LABEL,
+    filter_pred=lambda ex: ex.label != 'neutral')
+
+TEXT.build_vocab(train)
+LABEL.build_vocab(train)
+
+# batch data
+train_iter, val_iter, test_iter = torchtext.data.BucketIterator.splits(
+    (train, val, test), batch_size=10, device=device)
+
+# estimate theta
 train_pos, _, _ = torchtext.datasets.SST.splits(
     TEXT_pos, LABEL,
     filter_pred=lambda ex: ex.label != 'neutral' and ex.label != 'negative')
@@ -19,35 +32,30 @@ train_neg, _, _ = torchtext.datasets.SST.splits(
     TEXT_neg, LABEL,
     filter_pred=lambda ex: ex.label != 'neutral' and ex.label != 'positive')
 
-train, val, test = torchtext.datasets.SST.splits(
-    TEXT, LABEL,
-    filter_pred=lambda ex: ex.label != 'neutral')
-
 TEXT_pos.build_vocab(train_pos)
 TEXT_neg.build_vocab(train_neg)
 
-TEXT.build_vocab(train)
-LABEL.build_vocab(train)
-
-train_iter, val_iter, test_iter = torchtext.data.BucketIterator.splits(
-    (train, val, test), batch_size=10, device=device)
-
 theta = {}
 
-for x in vars(TEXT.vocab)['freqs']: 
+for x in TEXT.vocab.freqs: 
     #print(x, vars(TEXT_pos.vocab)['freqs'][x])
     if x not in theta.keys():
         theta[x] = [1, 1]
 
-for x in vars(TEXT_pos.vocab)['freqs']:
-    theta[x][0] += vars(TEXT_pos.vocab)['freqs'][x]
+for x in TEXT_pos.vocab.freqs:
+    theta[x][0] += TEXT_pos.vocab.freqs[x]
 
-for x in vars(TEXT_neg.vocab)['freqs']:
-    theta[x][1] += vars(TEXT_neg.vocab)['freqs'][x]
+for x in TEXT_neg.vocab.freqs:
+    theta[x][1] += TEXT_neg.vocab.freqs[x]
+
+# missing_pos = len(vars(TEXT.vocab)['stoi']) - len(vars(TEXT_pos.vocab)['freqs'])
+# #print(missing_pos)
+# missing_neg = len(vars(TEXT.vocab)['stoi']) - len(vars(TEXT_neg.vocab)['freqs'])
+# #print(missing_neg)
 
 for x in theta:
-    theta[x][0] = math.log(theta[x][0]/(sum(vars(TEXT_pos.vocab)['freqs'].values()) + len(TEXT.vocab)))
-    theta[x][1] = math.log(theta[x][1]/(sum(vars(TEXT_neg.vocab)['freqs'].values()) + len(TEXT.vocab)))
+    theta[x][0] = math.log(theta[x][0]/(sum(TEXT_pos.vocab.freqs.values()) + len(TEXT.vocab)))
+    theta[x][1] = math.log(theta[x][1]/(sum(TEXT_neg.vocab.freqs.values()) + len(TEXT.vocab)))
 
 theta_index = {}
 
@@ -56,14 +64,17 @@ for x in theta:
 
 for x in vars(TEXT.vocab)['stoi'].values():
     if x not in theta_index.keys():
-        theta_index[x] = torch.tensor([math.log(1/(sum(vars(TEXT_pos.vocab)['freqs'].values()) + len(TEXT.vocab))), math.log(1/(sum(vars(TEXT_neg.vocab)['freqs'].values()) + len(TEXT.vocab)))])
+        theta_index[x] = torch.tensor([
+            math.log(1/(sum(TEXT_pos.vocab.freqs.values()) + len(TEXT.vocab))), 
+            math.log(1/(sum(TEXT_neg.vocab.freqs.values()) + len(TEXT.vocab)))
+            ]) 
 
 def model(batch_text):
     blen = batch_text.shape[1]
     seqlen = batch_text.shape[0]
 
-    prior_pos = math.log(vars(LABEL.vocab)['freqs']['positive']/(sum(vars(LABEL.vocab)['freqs'].values())))
-    prior_neg = math.log(vars(LABEL.vocab)['freqs']['negative']/(sum(vars(LABEL.vocab)['freqs'].values())))
+    prior_pos = math.log(LABEL.vocab.freqs['positive']/(sum(LABEL.vocab.freqs.values())))
+    prior_neg = math.log(LABEL.vocab.freqs['negative']/(sum(LABEL.vocab.freqs.values())))
     
     prior = torch.tensor([prior_pos, prior_neg])
     
